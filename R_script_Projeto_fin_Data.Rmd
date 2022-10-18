@@ -17,7 +17,7 @@ valor_rais <- read_xlsx("C:/Users/Fabio/Documents/Data/base de dados/valor_rais.
 cnae1.0 <- read_xls("C:/Users/Fabio/Documents/Data/base de dados/CNAE1.0.xls", skip = 1)
 
 valor_rais1 <- valor_rais %>% 
-  select(cnpj_cei,cnae95_classe,year,quarter) %>% 
+  select(cnpj_cei,cnae95_classe,year,quarter,grossrev,ipca,n_i) %>% 
   filter(!is.na(cnpj_cei)) %>% 
   filter(!is.na(cnae95_classe)) %>% 
   mutate_all(as.character)
@@ -36,8 +36,6 @@ cnae1.0 <- cnae1.0 %>%
 
 valor_rais2 <- rename(valor_rais1, CNAE = cnae95_classe)
 
-
-# falta cruzar os dados com NA por causa dos zeros na frente
 Denominacao_secao <- valor_rais2 %>% 
   left_join(cnae1.0, by = "CNAE") %>% 
   select(cnpj_cei,SEÇÃO) %>% 
@@ -102,7 +100,7 @@ quit <- quit_rais %>%
 
 ```
 
-## Layoff Por setor
+## Layoff Por Seção CNAE
 
 ```{r}
 layoff_setor <- layoff %>% 
@@ -259,13 +257,7 @@ layoff_ano <- layoff_C %>%
 
 ```
 
-```{r}
-##produtividade por trabalhador
- #curto prazo assume que capital é fixo
- #valor da producao, ideal seria receita de vendas(receita real) / numero de trabalhadores
-```
-
-## Separation por setor
+## Separation por Seção CNAE
 
 ```{r}
 
@@ -423,7 +415,7 @@ separation_ano <- separation_C %>%
 
 ```
 
-## Quit por setor
+## Quit por Seção CNAE
 
 ```{r}
 
@@ -584,25 +576,36 @@ quit_ano <- quit_C %>%
 ## Grossrev (Receita Bruta)
 
 ```{r}
+grossrev_defla <- valor_rais1 %>% 
+  select(cnpj_cei,year,quarter,grossrev,ipca,n_i) %>% 
+  mutate_all(as.numeric) %>% 
+  mutate(gross_defla = grossrev*(2773.08/ipca)) %>% 
+  select(cnpj_cei,year,quarter,gross_defla,n_i)
 
-grossrev_rais <- valor_rais %>% 
-  select(cnpj_cei,year,quarter,grossrev) %>% 
-  pivot_wider(names_from = quarter, values_from = grossrev) %>% 
-  mutate_all(~na_if(.,0)) %>% 
-  mutate(grossrev = rowMeans(.[,3:6], na.rm = TRUE)) %>% 
-  select(cnpj_cei,year,grossrev) %>% 
+grossrev_anualizado <- grossrev_defla %>% 
+  select(cnpj_cei,year,quarter,gross_defla,n_i) %>% 
+  mutate_all(as.numeric) %>% 
+  mutate(grossrev_n = gross_defla/n_i) %>% 
+  select(cnpj_cei,year,quarter,grossrev_n) %>% 
+  pivot_wider(names_from = quarter, values_from = grossrev_n) %>% 
+  mutate(grossrev_n = rowMeans(.[,3:6], na.rm = TRUE)) %>% 
+  select(cnpj_cei,year,grossrev_n) %>% 
   transform(cnpj_cei = as.character(cnpj_cei))
 
-grossrev <- grossrev_rais %>% 
+grossrev_secao <- grossrev_anualizado %>% 
   left_join(Denominacao_secao, by = "cnpj_cei") %>% 
   drop_na() %>% 
-  select(cnpj_cei,SEÇÃO,year,grossrev)
+  select(cnpj_cei,SEÇÃO,year,grossrev_n)
+
+```
+
+#Grossrev por Seção CNAE
+
+```{r}
 
 grossrev_setor <- grossrev %>% 
-  transform(grossrev = as.character(grossrev)) %>% 
+  transform(grossrev = as.character(grossrev_n)) %>% 
   pivot_wider(names_from = SEÇÃO, values_from = grossrev)
-
-#Por setor
 
 grossrev_A <- grossrev_setor %>% 
   select(cnpj_cei,year,A) %>% 
@@ -749,172 +752,243 @@ grossrev_ano <- grossrev_C %>%
   left_join(grossrev_N, by = "year") %>% 
   left_join(grossrev_O, by = "year") %>% 
   left_join(grossrev_Q, by = "year")
-
 ```
 
-# Layoff por grossrev por ano médio dos CNPJ
+##produtividade por trabalhador
+ #curto prazo assume que capital é fixo
+ #valor da producao, ideal seria receita de vendas(receita real) / numero de trabalhadores
+
+# Grossrev x Wage Incumbets(salário)
 
 ```{r}
 
-Lay_Rev_C <- layoff_C %>% 
-  left_join(grossrev_C, by = "year")
+wage_inc_defla <- valor_rais %>% 
+  select(cnpj_cei,year,quarter,separation_all_i,ipca,wage_incumbents) %>% 
+  mutate_all(as.numeric) %>% 
+  mutate(wage_inc_defla = wage_incumbents*(2773.08/ipca)) %>% 
+  select(cnpj_cei,year,quarter,wage_inc_defla,separation_all_i)
 
-Lay_Rev_D <- layoff_D %>% 
-  left_join(grossrev_D, by = "year")
+wage_inc_anualizado <- wage_inc_defla %>% 
+  mutate_all(as.numeric) %>% 
+  select(cnpj_cei,year,quarter,separation_all_i,wage_inc_defla) %>% 
+  pivot_wider(names_from = quarter, values_from = wage_inc_defla) %>% 
+  mutate(wage_year = rowMeans(.[,3:6], na.rm = TRUE)) %>% 
+  select(cnpj_cei,year,wage_year,separation_all_i) %>% 
+  transform(cnpj_cei = as.character(cnpj_cei))
 
-Lay_Rev_E <- layoff_E %>% 
-  left_join(grossrev_E, by = "year")
+wage_inc_2017 <- wage_inc_anualizado %>% 
+  select(cnpj_cei,year,separation_all_i,wage_year) %>% 
+  filter(year == 2017)
 
-Lay_Rev_F <- layoff_F %>% 
-  left_join(grossrev_F, by = "year")
+#2008
+grossrev_2008 <- grossrev %>% 
+  filter(year == 2008) %>%
+  select(cnpj_cei,grossrev_n)
 
-Lay_Rev_G <- layoff_G %>% 
-  left_join(grossrev_G, by = "year")
+wage_inc_2008 <- wage_inc_anualizado %>% 
+  filter(year == 2008) %>% 
+  select(cnpj_cei,wage_year)
 
-Lay_Rev_H <- layoff_H %>% 
-  left_join(grossrev_H, by = "year")
+wage_rev_2008 <- grossrev_2008 %>% 
+  left_join(wage_inc_2008, by = "cnpj_cei")
+```
 
-Lay_Rev_I <- layoff_I %>% 
-  left_join(grossrev_I, by = "year")
+# Grossrev x Wage Hire
 
-Lay_Rev_J <- layoff_J %>% 
-  left_join(grossrev_K, by = "year")
+```{r}
+wage_hire_defla <- valor_rais1 %>% 
+  select(cnpj_cei,year,quarter,ipca,wage_hire_h) %>% 
+  mutate_all(as.numeric) %>% 
+  mutate(wage_hire_defla = wage_hire_h*(2773.08/ipca)) %>% 
+  select(cnpj_cei,year,quarter,wage_hire_defla)
 
-Lay_Rev_K <- layoff_K %>% 
-  left_join(grossrev_K, by = "year")
+wage_hire_anualizado <- wage_hire_defla %>% 
+  mutate_all(as.numeric) %>% 
+  select(cnpj_cei,year,quarter,wage_hire_defla) %>% 
+  pivot_wider(names_from = quarter, values_from = wage_hire_defla) %>% 
+  mutate(wage_hire_year = rowMeans(.[,3:6], na.rm = TRUE)) %>% 
+  select(cnpj_cei,year,wage_hire_year) %>% 
+  transform(cnpj_cei = as.character(cnpj_cei))
 
-Lay_Rev_L <- layoff_L %>% 
-  left_join(grossrev_L, by = "year")
+#2008
+grossrev_2017 <- grossrev_defla %>% 
+  filter(year == 2017) %>%
+  select(cnpj_cei,grossrev_n)
 
-Lay_Rev_M <- layoff_M %>% 
-  left_join(grossrev_M, by = "year")
+wage_hire_2017 <- wage_hire_anualizado %>% 
+  filter(year == 2017) %>% 
+  select(cnpj_cei,wage_year)
 
-Lay_Rev_N <- layoff_N %>% 
-  left_join(grossrev_N, by = "year")
-
-Lay_Rev_O <- layoff_O %>% 
-  left_join(grossrev_O, by = "year")
-
-Lay_Rev_Q <- layoff_Q %>% 
-  left_join(grossrev_Q, by = "year")
+wage_hire_rev_2017 <- grossrev_2017 %>% 
+  left_join(wage_inc_2017, by = "cnpj_cei")
 
 ```
 
-# Separation por grossrev por ano médio dos CNPJ
+# Churn Bruto
 
 ```{r}
-
-Sep_Rev_C <- separation_C %>% 
-  left_join(grossrev_C, by = "year")
-
-Sep_Rev_D <- separation_D %>% 
-  left_join(grossrev_D, by = "year")
-
-Sep_Rev_E <- separation_E %>% 
-  left_join(grossrev_E, by = "year")
-
-Sep_Rev_F <- separation_F %>% 
-  left_join(grossrev_F, by = "year")
-
-Sep_Rev_G <- separation_G %>% 
-  left_join(grossrev_G, by = "year")
-
-Sep_Rev_H <- separation_H %>% 
-  left_join(grossrev_H, by = "year")
-
-Sep_Rev_I <- separation_I %>% 
-  left_join(grossrev_I, by = "year")
-
-Sep_Rev_J <- separation_J %>% 
-  left_join(grossrev_K, by = "year")
-
-Sep_Rev_K <- separation_K %>% 
-  left_join(grossrev_K, by = "year")
-
-Sep_Rev_L <- separation_L %>% 
-  left_join(grossrev_L, by = "year")
-
-Sep_Rev_M <- separation_M %>% 
-  left_join(grossrev_M, by = "year")
-
-Sep_Rev_N <- separation_N %>% 
-  left_join(grossrev_N, by = "year")
-
-Sep_Rev_O <- separation_O %>% 
-  left_join(grossrev_O, by = "year")
-
-Sep_Rev_Q <- separation_Q %>% 
-  left_join(grossrev_Q, by = "year")
+churn_bruto <- valor_rais %>% 
+  select(n_i,separation_all_i) %>% 
+  mutate(churn_bruto = n_i*separation_all_i)
 
 ```
 
-# Separation por grossrev por ano médio dos CNPJ
+# Maior n_i por setor 
 
 ```{r}
 
-Quit_Rev_C <- quit_C %>% 
-  left_join(grossrev_C, by = "year")
+n_secao <- Denominacao_secao %>% 
+  select(cnpj_cei, SEÇÃO) %>% 
+  distinct()
 
-Quit_Rev_D <- quit_D %>% 
-  left_join(grossrev_D, by = "year")
+n_funcionarios <- Denominacao_secao %>% 
+  select(cnpj_cei,year,quarter,n_i) %>% 
+  mutate_all(as.numeric) %>% 
+  pivot_wider(names_from = quarter, values_from = n_i) %>% 
+  mutate(n_i = rowMeans(.[,3:6], na.rm = TRUE)) %>% 
+  select(cnpj_cei,year,n_i) %>% 
+  transform(cnpj_cei = as.character(cnpj_cei)) %>% 
+  left_join(n_secao, by = "cnpj_cei")
 
-Quit_Rev_E <- quit_E %>% 
-  left_join(grossrev_E, by = "year")
-
-Quit_Rev_F <- quit_F %>% 
-  left_join(grossrev_F, by = "year")
-
-Quit_Rev_G <- quit_G %>% 
-  left_join(grossrev_G, by = "year")
-
-Quit_Rev_H <- quit_H %>% 
-  left_join(grossrev_H, by = "year")
-
-Quit_Rev_I <- quit_I %>% 
-  left_join(grossrev_I, by = "year")
-
-Quit_Rev_J <- quit_J %>% 
-  left_join(grossrev_K, by = "year")
-
-Quit_Rev_K <- quit_K %>% 
-  left_join(grossrev_K, by = "year")
-
-Quit_Rev_L <- quit_L %>% 
-  left_join(grossrev_L, by = "year")
-
-Quit_Rev_M <- quit_M %>% 
-  left_join(grossrev_M, by = "year")
-
-Quit_Rev_N <- quit_N %>% 
-  left_join(grossrev_N, by = "year")
-
-Quit_Rev_O <- quit_O %>% 
-  left_join(grossrev_O, by = "year")
-
-Quit_Rev_Q <- quit_Q %>% 
-  left_join(grossrev_Q, by = "year")
+#2017
+MaxMin_n_agriculture <- n_funcionarios %>% 
+  filter(SEÇÃO == "A" | SEÇÃO  == "B") %>% 
+  filter(year == 2017) %>% 
+  mutate(Max_n = max(n_i)) %>% 
+  mutate(Min_n = min(n_i))
 
 ```
 
-# Plot gráfico tudo
+#Separation por Setor
 
 ```{r}
 
-ggplot(td_C, aes(x = year)) + 
-  geom_point(aes(y  = grossrev_C, color = "purple")) +
-  geom_point(aes(y = churn_C, color = "red"))
+## 2017
 
-ggplot(td_D, aes(x = year)) + 
-  geom_point(aes(y  = grossrev_D/1500000)) +
-  geom_point(aes(y = churn_D))
+grossrev_2017 <- grossrev %>% 
+  filter(year == 2017) %>%
+  select(cnpj_cei,grossrev_n)
 
-ggplot(td_E, aes(x = year)) + 
-  geom_point(aes(y  = grossrev_E/1500000)) +
-  geom_point(aes(y = churn_E))
+Agriculture_sep_2017 <- separation %>% 
+  filter(SEÇÃO == "A" | SEÇÃO == "B") %>% 
+  filter(year == "2017") %>% 
+  left_join(grossrev_2017, by = "cnpj_cei")
 
-ggplot(td_F, aes(x = year)) + 
-  geom_point(aes(y  = grossrev_F/1500000)) +
-  geom_point(aes(y = churn_F))
+Minning_sep_2017 <- separation %>% 
+  filter(SEÇÃO == "C") %>% 
+  filter(year == "2017") %>% 
+  left_join(grossrev_2017, by = "cnpj_cei")
+
+Manufactoring_sep_2017 <- separation %>% 
+  filter(SEÇÃO == "D") %>% 
+  filter(year == "2017") %>% 
+  left_join(grossrev_2017, by = "cnpj_cei")
+
+Utilities_sep_2017 <- separation %>% 
+  filter(SEÇÃO == "E") %>% 
+  filter(year == "2017") %>% 
+  left_join(grossrev_2017, by = "cnpj_cei")
+
+Construction_sep_2017 <- separation %>% 
+  filter(SEÇÃO == "F") %>% 
+  filter(year == "2017") %>% 
+  left_join(grossrev_2017, by = "cnpj_cei")
+
+Retail_sep_2017 <- separation %>% 
+  filter(SEÇÃO == "G") %>% 
+  filter(year == "2017") %>% 
+  left_join(grossrev_2017, by = "cnpj_cei")
+
+Services_sep_2017 <- separation %>% 
+  filter(SEÇÃO == "H" | SEÇÃO == "I" | SEÇÃO == "J" | SEÇÃO == "K" | SEÇÃO == "L" | SEÇÃO == "M" | SEÇÃO == "N" | SEÇÃO == "O" | SEÇÃO == "Q") %>% 
+  filter(year == "2017") %>% 
+  left_join(grossrev_2017, by = "cnpj_cei")
+
+```
+
+#Gráficos
+
+```{r}
+sep_2017 <- separation_rais %>% 
+  filter(year == 2017) %>%
+  select(cnpj_cei,separation)
+
+grossrev_2017 <- grossrev %>% 
+  filter(year == 2017) %>%
+  select(cnpj_cei,grossrev_n) %>% 
+  left_join(sep_zu, by = "cnpj_cei")
+
+ggplot(data = grossrev_2017) +
+  geom_point(mapping = aes(x = separation, y = grossrev_n,
+                           color = "red")) +
+  scale_x_log10()
+
+ggplot(data = grossrev_2017) +
+  geom_point(mapping = aes(x = grossrev_n, y = separation,
+                           color = "red")) +
+  scale_x_log10()
 
 
+ggplot(data = grossrev_2017) +
+  geom_point(mapping = aes(x = grossrev_n, y = separation), colour = "blue") +
+  xlim(0,10000) +
+  labs(x = "Produtividade por Trabalhador", y = "Churn", title = "Relação entre o churn e produtividade por trabalhador")
+  scale_x_log10()
+  
+ggplot(data = wage_inc_zu) +
+  geom_point(mapping = aes(x = wage_year, y = separation_all_i), colour = "blue") +
+  xlim(200,1300)+
+  labs(x = "Salário Anual Real", y = "Churn", title = "Relação entre o churn e salário real anual")
+  scale_x_log10()
+
+  
+ggplot(data = Agriculture_sep_2017) +
+  geom_point(mapping = aes(x = grossrev_n, y = separation), colour = "blue") +
+  xlim(0,7500) +
+  ylim(0,1) +
+  labs(x = "Produtividade por Trabalhador", y = "Churn", title = "Relação entre o churn e produtividade por trabalhador (Agricultura)")
+  scale_x_log10()  
+  
+ggplot(data = Minning_sep_2017) +
+  geom_point(mapping = aes(x = grossrev_n, y = separation), colour = "blue") +
+  xlim(0,7500) +
+  ylim(0,1) +
+  labs(x = "Produtividade por Trabalhador", y = "Churn", title = "Relação entre o churn e produtividade por trabalhador (Mineração)")
+  scale_x_log10()  
+  
+ggplot(data = Manufactoring_sep_2017) +
+  geom_point(mapping = aes(x = grossrev_n, y = separation), colour = "blue") +
+  xlim(0,7500) +
+  ylim(0,1) +
+  labs(x = "Produtividade por Trabalhador", y = "Churn", title = "Relação entre o churn e produtividade por trabalhador (Industria)")
+  scale_x_log10()
+  
+ggplot(data = Utilities_sep_2017) +
+  geom_point(mapping = aes(x = grossrev_n, y = separation), colour = "blue") +
+  xlim(0,7500) +
+  ylim(0,1) +
+  labs(x = "Produtividade por Trabalhador", y = "Churn", title = "Relação entre o churn e produtividade por trabalhador (Utilidades)")
+  scale_x_log10()
+  
+ggplot(data = Construction_sep_2017) +
+  geom_point(mapping = aes(x = grossrev_n, y = separation), colour = "blue") +
+  xlim(0,7500) +
+  ylim(0,1) +
+  labs(x = "Produtividade por Trabalhador", y = "Churn", title = "Relação entre o churn e produtividade por trabalhador (Construção)")
+  scale_x_log10()
+  
+ggplot(data = Retail_sep_2017) +
+  geom_point(mapping = aes(x = grossrev_n, y = separation), colour = "blue") +
+  xlim(0,7500) +
+  ylim(0,1) +
+  labs(x = "Produtividade por Trabalhador", y = "Churn", title = "Relação entre o churn e produtividade por trabalhador (Varejo)")
+  scale_x_log10()
+  
+ggplot(data = Services_sep_2017) +
+  geom_point(mapping = aes(x = grossrev_n, y = separation), colour = "blue") +
+  xlim(0,7500) +
+  ylim(0,1) +
+  labs(x = "Produtividade por Trabalhador", y = "Churn", title = "Relação entre o churn e produtividade por trabalhador (Serviços)")
+  scale_x_log10()
+  
 ```
